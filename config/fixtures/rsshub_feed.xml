@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>RSSHub Fixture Finance</title>
+    <link>https://example.test/rsshub</link>
+    <description>RSSHub fixture feed for Signal Harbor tests.</description>
+    <item>
+      <title>RSSHub A股监管更新</title>
+      <link>https://example.test/rsshub/a-stock-regulation</link>
+      <description><![CDATA[A股监管政策更新，关注上市公司信息披露风险。]]></description>
+      <pubDate>Sat, 09 May 2026 09:00:00 +0800</pubDate>
+      <author>rsshub-fixture</author>
+      <category>A股</category>
+      <category>监管</category>
+    </item>
+    <item>
+      <title>RSSHub 港股流动性观察</title>
+      <link>https://example.test/rsshub/hk-liquidity</link>
+      <description><![CDATA[港股市场流动性变化，关注银行和保险板块。]]></description>
+      <pubDate>Sat, 09 May 2026 10:00:00 +0800</pubDate>
+      <author>rsshub-fixture</author>
+      <category>港股</category>
+    </item>
+  </channel>
+</rss>

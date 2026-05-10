@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Signal Harbor RSS Fixture</title>
+    <link>https://example.test/rss</link>
+    <description>本地 RSS 公开源示例</description>
+    <item>
+      <title>公开 RSS：AI 供应链风险继续发酵</title>
+      <link>https://example.test/rss/ai-supply-risk</link>
+      <description><![CDATA[公开 RSS 提到 AI 供应链交付存在风险，相关订单和监管因素需要继续验证。]]></description>
+      <pubDate>Thu, 30 Apr 2026 09:30:00 +0800</pubDate>
+      <author>rss-fixture</author>
+    </item>
+    <item>
+      <title>公开 RSS：黄金和美元短线分歧</title>
+      <link>https://example.test/rss/gold-dollar</link>
+      <description>黄金价格与美元指数短线分歧，市场关注美联储会议。</description>
+      <pubDate>Thu, 30 Apr 2026 10:20:00 +0800</pubDate>
+    </item>
+  </channel>
+</rss>

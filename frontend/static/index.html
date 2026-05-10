@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f6f7f2" />
+    <title>Signal Harbor</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <h1>
+          <span>Signal Harbor</span>
+          <span id="appVersion" class="app-version" data-app-version="1.3">1.3</span>
+        </h1>
+        <p id="healthText">本机情报流</p>
+      </div>
+      <button id="refreshButton" class="icon-button" type="button" title="刷新">↻</button>
+    </header>
+
+    <main class="app-shell">
+      <nav class="tabs" aria-label="主导航">
+        <button class="tab active" type="button" data-view="latest">最新</button>
+        <button class="tab" type="button" data-view="events">事件</button>
+        <button class="tab" type="button" data-view="source">数据源</button>
+        <button class="tab" type="button" data-view="search">搜索</button>
+        <button class="tab" type="button" data-view="collections">专题</button>
+        <button class="tab" type="button" data-view="favorites">收藏</button>
+        <button class="tab" type="button" data-view="alerts">提醒</button>
+        <button class="tab" type="button" data-view="runtime">运行</button>
+      </nav>
+      <div id="statusBanner" class="status-banner" role="status" hidden></div>
+
+      <section id="latestView" class="view active">
+        <div class="toolbar">
+          <div>
+            <strong>最新流</strong>
+            <span id="latestCount" class="muted">0 条</span>
+          </div>
+          <button id="latestRefreshButton" class="compact-button latest-refresh-button" type="button">刷新最新</button>
+          <select id="latestSourceSelect" title="按数据源筛选最新流"></select>
+          <select id="latestTranslationStatusSelect" title="按翻译状态筛选最新流"></select>
+        </div>
+        <div id="latestList" class="item-list"></div>
+      </section>
+
+      <section id="eventsView" class="view">
+        <div class="toolbar event-toolbar">
+          <div>
+            <strong>事件视图</strong>
+            <span id="eventCount" class="muted">0 组</span>
+          </div>
+          <button id="eventRefreshButton" class="compact-button" type="button">刷新事件</button>
+        </div>
+        <div id="eventList" class="item-list"></div>
+      </section>
+
+      <section id="sourceView" class="view">
+        <section class="panel-section">
+          <h2>数据源目录</h2>
+          <div id="sourceList" class="plain-list"></div>
+        </section>
+        <section class="panel-section">
+          <h2>新增数据源</h2>
+          <p class="muted">RSS/RSSHub 可直接参与公开源采集；JSON/HTML 需要配置 mapping 后才会采集，否则仅作为目录说明。</p>
+          <form id="sourceForm" class="source-form">
+            <input id="sourceNameInput" type="text" placeholder="名称" />
+            <select id="sourceTypeSelect" title="数据源类型">
+              <option value="rss">RSS</option>
+              <option value="rsshub">RSSHub</option>
+              <option value="json">JSON</option>
+              <option value="html">HTML</option>
+              <option value="manual">手动</option>
+            </select>
+            <input id="sourceLocationInput" type="text" placeholder="公开 URL 或本地相对路径" />
+            <input id="sourceRssHubBaseInput" type="text" placeholder="RSSHub base URL，如 http://127.0.0.1:1200" />
+            <input id="sourceRssHubRouteInput" type="text" placeholder="RSSHub route，如 /wallstreetcn/live/global/2" />
+            <input id="sourceTagsInput" type="text" placeholder="默认标签，用逗号分隔" />
+            <input id="sourceDescriptionInput" type="text" placeholder="简介" />
+            <input id="sourcePublisherInput" type="text" placeholder="发布机构" />
+            <input id="sourceRegionInput" type="text" placeholder="地区" />
+            <input id="sourceMarketInput" type="text" placeholder="市场/主题" />
+            <input id="sourceLanguageInput" type="text" placeholder="语言，如 zh / en" />
+            <input id="sourceQualityTierInput" type="text" placeholder="质量层级" />
+            <input id="sourceIncludeKeywordsInput" type="text" placeholder="纳入关键词，用逗号分隔" />
+            <input id="sourceExcludeKeywordsInput" type="text" placeholder="排除关键词，用逗号分隔" />
+            <input id="sourceDefaultTopicsInput" type="text" placeholder="默认主题，用逗号分隔" />
+            <label class="check-row">
+              <input id="sourceEnabledInput" type="checkbox" checked />
+              <span>启用</span>
+            </label>
+            <button type="submit">新增数据源</button>
+          </form>
+        </section>
+      </section>
+
+      <section id="searchView" class="view">
+        <form id="searchForm" class="search-form">
+          <input id="searchInput" type="search" placeholder="关键词、标的、风险词" />
+          <select id="searchSourceSelect" title="按数据源筛选搜索"></select>
+          <input id="topicInput" type="text" placeholder="主题/标签" />
+          <select id="searchTranslationStatusSelect" title="按翻译状态筛选搜索"></select>
+          <input id="minScoreInput" type="number" min="0" max="100" step="5" placeholder="最低分" />
+          <button type="submit">搜索</button>
+        </form>
+        <form id="savedSearchForm" class="inline-form">
+          <input id="savedSearchName" type="text" placeholder="保存搜索名称" />
+          <button type="submit">保存搜索</button>
+        </form>
+        <section class="panel-section">
+          <h2>保存搜索</h2>
+          <div id="savedSearchList" class="plain-list"></div>
+        </section>
+        <div id="searchList" class="item-list"></div>
+      </section>
+
+      <section id="collectionsView" class="view">
+        <form id="watchlistForm" class="inline-form">
+          <input id="watchlistName" type="text" placeholder="观察清单名称" />
+          <input id="watchlistKeywords" type="text" placeholder="关键词，用逗号分隔" />
+          <button type="submit">新增</button>
+        </form>
+        <form id="collectionForm" class="inline-form">
+          <input id="collectionName" type="text" placeholder="专题名称" />
+          <input id="collectionDescription" type="text" placeholder="专题备注" />
+          <button type="submit">新建专题</button>
+        </form>
+        <div class="split-list">
+          <div>
+            <h2>观察清单</h2>
+            <div id="watchlistList" class="plain-list"></div>
+          </div>
+          <div>
+            <h2>专题集合</h2>
+            <div id="collectionList" class="plain-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="favoritesView" class="view">
+        <div id="favoriteList" class="plain-list"></div>
+      </section>
+
+      <section id="alertsView" class="view">
+        <form id="alertRuleForm" class="alert-form">
+          <input id="alertRuleName" type="text" placeholder="提醒名称" />
+          <input id="alertRuleKeywords" type="text" placeholder="关键词，用逗号分隔" />
+          <input id="alertRuleMinScore" type="number" min="0" max="100" step="5" placeholder="最低分" />
+          <label class="check-row">
+            <input id="alertRuleEnabled" type="checkbox" checked />
+            <span>启用</span>
+          </label>
+          <button type="submit">新增提醒</button>
+        </form>
+        <div class="split-list">
+          <div>
+            <h2>提醒规则</h2>
+            <div id="alertRuleList" class="plain-list"></div>
+          </div>
+          <div>
+            <h2>站内消息</h2>
+            <div id="notificationList" class="plain-list"></div>
+          </div>
+          <div>
+            <h2>任务记录</h2>
+            <div id="taskRunList" class="plain-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="runtimeView" class="view">
+        <section class="panel-section">
+          <h2>运行状态</h2>
+          <div id="runtimeStatusPanel" class="stats-grid"></div>
+        </section>
+        <section class="panel-section">
+          <h2>远程访问</h2>
+          <div id="runtimeRemotePanel" class="plain-list"></div>
+        </section>
+        <section class="panel-section">
+          <div class="runtime-actions">
+            <div>
+              <h2>公开源采集</h2>
+              <p class="muted">手动采集会复用当前公开源配置、源级过滤、去重和任务记录。</p>
+            </div>
+            <button id="ingestPublicButton" type="button">立即采集公开源</button>
+          </div>
+          <div id="runtimeTaskList" class="plain-list"></div>
+        </section>
+      </section>
+    </main>
+
+    <aside id="detailPanel" class="detail-panel" aria-live="polite">
+      <button id="closeDetailButton" class="icon-button close-button" type="button" title="关闭">×</button>
+      <div id="detailContent"></div>
+    </aside>
+
+    <aside id="collectionPanel" class="action-panel" aria-live="polite">
+      <button id="closeCollectionPanelButton" class="icon-button close-button" type="button" title="关闭">×</button>
+      <h2>加入专题</h2>
+      <p id="collectionTargetText" class="muted"></p>
+      <form id="existingCollectionForm" class="stack-form">
+        <select id="collectionSelect"></select>
+        <button type="submit">加入所选专题</button>
+      </form>
+      <form id="quickCollectionForm" class="stack-form">
+        <input id="quickCollectionName" type="text" placeholder="新专题名称" />
+        <button type="submit">新建并加入</button>
+      </form>
+    </aside>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

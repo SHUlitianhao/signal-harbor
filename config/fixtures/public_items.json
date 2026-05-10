@@ -1,0 +1,20 @@
+{
+  "items": [
+    {
+      "headline": "公开 JSON：监管细则更新",
+      "body": "公开 JSON 源显示，新的监管细则强调信息披露、平台合规和风险控制。",
+      "link": "https://example.test/json/regulation-update",
+      "published_at": "2026-04-30T11:00:00+08:00",
+      "author": "json-fixture",
+      "tags": ["监管", "政策"]
+    },
+    {
+      "headline": "公开 JSON：芯片订单跟踪",
+      "body": "多个公开信号显示芯片订单热度上升，但供应和交付节奏仍需观察。",
+      "link": "https://example.test/json/chip-orders",
+      "published_at": "2026-04-30T11:40:00+08:00",
+      "author": "json-fixture",
+      "tags": ["芯片", "订单"]
+    }
+  ]
+}

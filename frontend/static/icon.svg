@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Signal Harbor">
+  <rect width="128" height="128" rx="24" fill="#f6f7f2"/>
+  <path d="M24 82h80v14H24z" fill="#2f7d5f"/>
+  <path d="M34 76c7-18 17-27 30-27s23 9 30 27H34z" fill="#315f8f"/>
+  <path d="M62 25h8v54h-8z" fill="#1f2a24"/>
+  <path d="M70 31l30 13-30 13z" fill="#b56f2a"/>
+</svg>

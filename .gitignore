@@ -1,0 +1,74 @@
+# OS and editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.python-version
+.venv/
+venv/
+env/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.npm/
+.pnpm-store/
+.next/
+.nuxt/
+.svelte-kit/
+coverage/
+
+# Docker and local runtime
+docker-compose.override.yml
+
+# Local Signal Harbor runtime config
+config/sources.local.json
+
+# Local data, logs, caches, and generated media
+data/
+logs/
+cache/
+runtime/
+tmp/
+media/
+models/
+downloads/
+
+# Databases and indexes
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+
+# Generated files
+*.log
+*.pid
+*.seed

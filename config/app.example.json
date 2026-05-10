@@ -1,0 +1,16 @@
+{
+  "data_dir": "data",
+  "database_path": "data/signal_harbor.sqlite3",
+  "fixture_path": "config/fixtures/items.json",
+  "frontend_dir": "frontend/static",
+  "translation_config_path": "config/translation.example.json",
+  "public_sources_config_path": "config/sources.example.json",
+  "ingest_on_startup": false,
+  "ingest_interval_minutes": 0,
+  "remote_public_base_url": "",
+  "remote_access_enabled": false,
+  "remote_auth_scheme": "basic",
+  "remote_auth_username": "signal-harbor",
+  "host": "127.0.0.1",
+  "port": 8765
+}

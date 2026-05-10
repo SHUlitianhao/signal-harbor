@@ -1,0 +1,44 @@
+[
+  {
+    "source_url": "https://example.test/forum/ai-chip-supply",
+    "title": "AI 芯片供应链出现交付风险",
+    "text": "多位供应链人士提到，AI 服务器关键芯片交付周期延长。部分订单可能推迟，需继续验证客户侧影响。风险点包括供应紧张和监管审查。",
+    "published_at": "2026-04-30T09:15:00+08:00",
+    "author": "fixture-analyst",
+    "tags": ["AI", "芯片", "供应链"],
+    "assets": [
+      {
+        "type": "image",
+        "url": "https://example.test/assets/supply-screenshot.png",
+        "note": "模拟截图证据"
+      }
+    ],
+    "metadata": {
+      "source_name": "公开论坛 fixture"
+    }
+  },
+  {
+    "source_url": "https://example.test/news/regulation-watch",
+    "title": "监管政策更新引发市场讨论",
+    "text": "公开新闻源显示，新的监管细则强调信息披露和风险控制。相关讨论集中在平台企业、数据合规和后续执行节奏。",
+    "published_at": "2026-04-30T10:30:00+08:00",
+    "author": "fixture-news",
+    "tags": ["监管", "政策"],
+    "assets": [],
+    "metadata": {
+      "source_name": "公开新闻 fixture"
+    }
+  },
+  {
+    "source_url": "https://example.test/community/gold-dollar",
+    "title": "黄金与美元走势分歧",
+    "text": "社区讨论提到黄金价格与美元指数短线分歧。观点仍需结合美联储会议和地缘冲突进展交叉验证。",
+    "published_at": "2026-04-30T11:20:00+08:00",
+    "author": "fixture-community",
+    "tags": ["黄金", "美元"],
+    "assets": [],
+    "metadata": {
+      "source_name": "社区 fixture"
+    }
+  }
+]
