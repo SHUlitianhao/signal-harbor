@@ -26,6 +26,10 @@ from signal_harbor.domain import (
 )
 from signal_harbor.events import (
     EVENT_CONTEXT_LIMIT,
+    EVENT_EVIDENCE_DETAIL_LIMIT,
+    EVENT_EVIDENCE_LIST_LIMIT,
+    EVENT_ITEM_DETAIL_LIMIT,
+    EVENT_ITEM_LIST_LIMIT,
     decorate_event_groups,
     decorate_single_item_event,
     event_group_payload,
@@ -1049,9 +1053,39 @@ class SQLiteStore:
     def list_events(self, limit: int = 50) -> list[dict[str, Any]]:
         clean_limit = self._clean_limit(limit)
         groups = event_groups_for_items(self._event_candidate_items(), self._latest_insight_for_item)
-        events = [event_group_payload(group, self._latest_insight_for_item) for group in groups if group]
+        events = [
+            event_group_payload(
+                group,
+                self._latest_insight_for_item,
+                item_limit=EVENT_ITEM_LIST_LIMIT,
+                evidence_limit=EVENT_EVIDENCE_LIST_LIMIT,
+            )
+            for group in groups
+            if group
+        ]
         events.sort(key=lambda event: str(event.get("event_latest_at") or ""), reverse=True)
         return events[:clean_limit]
+
+    def list_industry_domain_candidate_items(self, limit: int = EVENT_CONTEXT_LIMIT) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            """
+            SELECT i.*
+            FROM items i
+            JOIN sources s ON s.id = i.source_id
+            WHERE s.enabled = 1
+            ORDER BY i.published_at DESC, i.created_at DESC
+            LIMIT ?
+            """,
+            (self._clean_limit(limit),),
+        ).fetchall()
+        items = self._decorate_event_groups([self._item_row(row) for row in rows], collapse=False)
+        for item in items:
+            insight = self._latest_insight_for_item(str(item.get("id", ""))) or {}
+            item["summary"] = insight.get("summary", "")
+            item["signals"] = insight.get("signals", [])
+            item["risk_flags"] = insight.get("risk_flags", [])
+            item["evidence_refs"] = insight.get("evidence_refs", [])
+        return items
 
     def get_event(self, event_key: str) -> dict[str, Any] | None:
         normalized = str(event_key or "").strip()
@@ -1059,7 +1093,12 @@ class SQLiteStore:
             return None
         groups = event_groups_for_items(self._event_candidate_items(), self._latest_insight_for_item)
         for group in groups:
-            payload = event_group_payload(group, self._latest_insight_for_item)
+            payload = event_group_payload(
+                group,
+                self._latest_insight_for_item,
+                item_limit=EVENT_ITEM_DETAIL_LIMIT,
+                evidence_limit=EVENT_EVIDENCE_DETAIL_LIMIT,
+            )
             if payload.get("event_key") == normalized:
                 return payload
         return None
@@ -1135,7 +1174,8 @@ class SQLiteStore:
     def list_alert_rules(self) -> list[dict[str, Any]]:
         return [self._alert_rule_row(row) for row in self.connection.execute("SELECT * FROM alert_rules ORDER BY created_at DESC")]
 
-    def list_notifications(self) -> list[dict[str, Any]]:
+    def list_notifications(self, limit: int = 20) -> list[dict[str, Any]]:
+        clean_limit = min(self._clean_limit(limit), 50)
         rows = self.connection.execute(
             """
             SELECT
@@ -1161,12 +1201,71 @@ class SQLiteStore:
               LIMIT 1
             )
             ORDER BY n.created_at DESC
-            """
+            LIMIT ?
+            """,
+            (max(clean_limit * 3, clean_limit),),
         ).fetchall()
         notifications = [self._notification_row(row) for row in rows]
+        self._decorate_notifications_events(notifications)
+        deduped = []
+        seen_events: set[str] = set()
         for notification in notifications:
-            self._decorate_notification_event(notification)
-        return notifications
+            event_key = str(notification.get("event_key") or "")
+            dedupe_key = event_key if event_key else str(notification.get("id") or "")
+            if dedupe_key in seen_events:
+                continue
+            seen_events.add(dedupe_key)
+            deduped.append(notification)
+            if len(deduped) >= clean_limit:
+                break
+        return deduped
+
+    def _decorate_notifications_events(self, notifications: list[dict[str, Any]]) -> None:
+        item_ids = {str(notification.get("item_id") or "") for notification in notifications if notification.get("item_id")}
+        candidates = self._event_candidate_items()
+        groups = event_groups_for_items(candidates, self._latest_insight_for_item)
+        item_events: dict[str, dict[str, Any]] = {}
+        for group in groups:
+            payload = event_group_payload(
+                group,
+                self._latest_insight_for_item,
+                item_limit=EVENT_ITEM_LIST_LIMIT,
+                evidence_limit=EVENT_EVIDENCE_LIST_LIMIT,
+            )
+            for item in group:
+                item_id = str(item.get("id") or "")
+                if item_id in item_ids:
+                    item_events[item_id] = {
+                        "event_key": payload.get("event_key", ""),
+                        "event_group": payload.get("event_group", {}),
+                        "related_count": payload.get("related_count", 0),
+                        "related_items": payload.get("related_items", []),
+                        "source_count": payload.get("source_count", 0),
+                        "event_sources": payload.get("event_sources", []),
+                        "event_latest_at": payload.get("event_latest_at", ""),
+                        "event_score": payload.get("event_score", item.get("score", 0)),
+                        "event_evidence_refs": payload.get("event_evidence_refs", []),
+                        "event_merge_reason": payload.get("event_merge_reason", ""),
+                    }
+        for notification in notifications:
+            item_id = str(notification.get("item_id") or "")
+            if not item_id:
+                self._decorate_notification_event(notification)
+                continue
+            event = item_events.get(item_id)
+            if event:
+                notification.update(event)
+            else:
+                notification.setdefault("event_key", "")
+                notification.setdefault("event_group", {})
+                notification.setdefault("related_count", 0)
+                notification.setdefault("related_items", [])
+                notification.setdefault("source_count", 1 if notification.get("source_name") else 0)
+                notification.setdefault("event_sources", [notification.get("source_name", "")] if notification.get("source_name") else [])
+                notification.setdefault("event_latest_at", notification.get("created_at", ""))
+                notification.setdefault("event_score", notification.get("score") or 0)
+                notification.setdefault("event_evidence_refs", [])
+                notification.setdefault("event_merge_reason", "单条情报")
 
     def _decorate_notification_event(self, notification: dict[str, Any]) -> None:
         item_id = str(notification.get("item_id") or "")
@@ -1199,8 +1298,16 @@ class SQLiteStore:
         ):
             notification[key] = item.get(key)
 
-    def list_task_runs(self) -> list[dict[str, Any]]:
-        return [self._task_run_row(row) for row in self.connection.execute("SELECT * FROM task_runs ORDER BY started_at DESC")]
+    def list_task_runs(self, limit: int | None = None) -> list[dict[str, Any]]:
+        if limit is None:
+            return [self._task_run_row(row) for row in self.connection.execute("SELECT * FROM task_runs ORDER BY started_at DESC")]
+        return [
+            self._task_run_row(row)
+            for row in self.connection.execute(
+                "SELECT * FROM task_runs ORDER BY started_at DESC LIMIT ?",
+                (self._clean_limit(limit),),
+            )
+        ]
 
     def health(self) -> dict[str, Any]:
         item_count = self.connection.execute("SELECT COUNT(*) FROM items").fetchone()[0]
@@ -1329,6 +1436,7 @@ class SQLiteStore:
             "source_publisher": str(metadata.get("publisher", "")),
             "source_region": str(metadata.get("region", "")),
             "source_market": str(metadata.get("market", "")),
+            "source_quality_tier": str(metadata.get("quality_tier", "")),
         }
 
     def _item_row(self, row: sqlite3.Row) -> dict[str, Any]:
@@ -1341,6 +1449,7 @@ class SQLiteStore:
         result["source_publisher"] = result["metadata"].get("publisher") or source_metadata.get("source_publisher", "")
         result["source_region"] = result["metadata"].get("region") or source_metadata.get("source_region", "")
         result["source_market"] = result["metadata"].get("market") or source_metadata.get("source_market", "")
+        result["source_quality_tier"] = result["metadata"].get("quality_tier") or source_metadata.get("source_quality_tier", "")
         result["translation"] = self._normalized_translation_for_item(result, result["metadata"].get("translation", {}))
         result["translation_status"] = self._translation_status_for_item(result)
         return result
@@ -1354,6 +1463,7 @@ class SQLiteStore:
             "source_publisher",
             "source_region",
             "source_market",
+            "source_quality_tier",
         ):
             item.pop(key, None)
         return Item(**item)

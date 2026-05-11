@@ -1,21 +1,23 @@
 # Signal Harbor
 
-Signal Harbor 是一个本机自托管的投资与国际资讯情报收集器。它把公开来源内容采集到本地 SQLite，完成标准化、去重、摘要、评分、搜索、收藏、提醒、同事件归并，并通过手机 PWA 查看。系统只提供研究辅助信息和证据引用，不提供直接买卖建议。
+Signal Harbor 是一个本机自托管的投资情报与行业域热度识别系统。它把公开来源内容采集到本地 SQLite，完成标准化、去重、摘要、评分、搜索、收藏、提醒、同事件归并，并基于新闻/事件证据生成 A 股行业域热门榜，通过手机 PWA 查看。系统只提供研究辅助信息和证据引用，不提供直接买卖建议。
 
-当前用户可见版本：`1.3`。后续版本升级必须同步更新 `docs/RELEASE_NOTES.md`、`docs/PRD.md`、左上角版本号、service worker 缓存名和相关测试。
+当前用户可见版本：`1.6`。后续版本升级必须同步更新 `docs/RELEASE_NOTES.md`、`docs/PRD.md`、左上角版本号、service worker 缓存名和相关测试。
 
 ## 当前能力
 
 - 公开源采集：fixture、RSS、RSSHub、JSON、低风险静态 HTML。
 - RSSHub 作为外部上游服务接入；Signal Harbor 只消费公开 RSS，不并入 RSSHub 的 Node/TypeScript 依赖。
 - 首批 RSSHub 来源：华尔街见闻重要快讯、财联社加红电报、金十重要快讯、同花顺重要要闻、DW 中文国际新闻。
+- 行业域热度识别：基于短期强催化和持续热点结合，输出更精简的行业域热度、推荐理由、分数拆解、研究优先级和关联监控股票池 Top 10。
+- 事件和提醒列表默认精简返回，点击详情再查看更多证据，减少手机端等待和重复刷屏。
 - 数据源页支持新增、启用和停用来源；手机端新增 RSS/RSSHub 可进入公开源采集，JSON/HTML 缺少 mapping 时仅作为目录说明。
 - 本地词典翻译辅助；PWA 已移除翻译维护模块，词典状态和词典维护 API 仅作为 internal maintenance 保留。
 - 同一事件规则归并：最新流、搜索、详情、提醒和事件页展示来源数、相关报道、证据链接和归并解释。
 - 手机远程可用：本机服务 + Basic Auth + 用户自行配置的安全通道，例如 Tailscale Serve。
 - 默认不自动删除情报 item；运行日志清理必须显式执行脚本。
 
-当前不支持登录态、Cookie、验证码、JS 渲染、浏览器自动化、反爬绕过、外部翻译 API、云模型、embedding、自动交易或多用户 SaaS。
+当前不支持登录态、Cookie、验证码、JS 渲染、浏览器自动化、反爬绕过、外部翻译 API、云模型、embedding、行情/资金/财务量化确认、真实回测收益、自动交易或多用户 SaaS。行业域股票池仅是监控样本和研究验证对象，不构成买卖建议。
 
 ## 本地启动
 
@@ -104,6 +106,7 @@ tailscale serve status
 
 ## 手机 PWA 工作流
 
+- “行业域”是默认第一屏，展示新闻/事件驱动的热门行业域、分数拆解、利好/利空方向、研究优先级和证据链。
 - “最新”查看最新情报，支持刷新、来源筛选、翻译状态筛选、收藏和加入专题。
 - “事件”查看同一事件的多来源报道，每条保留原始 URL 作为证据。
 - “数据源”管理来源；RSS/RSSHub 可采集，JSON/HTML 需要 mapping 后才采集。
@@ -151,6 +154,12 @@ SIGNAL_HARBOR_SOURCES_CONFIG=config/sources.local.json python3 scripts/run_dev.p
 
 实际接入只限公开、无需登录、无需 Cookie、无需验证码、无需 JS 渲染、无需规避反爬的 route。若 route 返回 401、403、429 或明显阻止自动访问，应停用该 route。
 
+## 行业域与监控股票池
+
+行业域配置位于 `config/industry_domains.example.json`，股票池示例位于 `config/stock_universe.example.json`。系统会在行业域详情中计算 `related_stocks_top10`，按关联度展示最多 10 只 A 股监控样本，并说明命中的行业分类、概念标签、业务关键词、相关新闻/事件和证据 URL。
+
+当前股票池只用于观察行业方向持续性和后续验证，不接行情、资金、财务、估值或回测数据；相关监控指标会显示“未接入”或“待验证”。
+
 ## 数据保留与清理
 
 当前默认不自动删除 `items`、`task_runs`、`notifications` 或证据 URL。同事件归并只影响展示，不删除原始情报。
@@ -175,6 +184,7 @@ python3 scripts/cleanup_data.py --database data/signal_harbor.sqlite3 --days 90 
 
 - 运行：`GET /api/health`、`GET /api/runtime/status`、`POST /api/tasks/ingest-public`
 - 来源：`GET /api/sources`、`POST /api/sources`、`POST /api/sources/{id}/toggle`
+- 行业域：`GET /api/industry-domains`、`GET /api/industry-domains/{domain_id}`
 - 情报：`GET /api/items/latest`、`GET /api/items/search`、`GET /api/items/{id}`、`POST /api/items/{id}/translate`
 - 事件：`GET /api/events`、`GET /api/events/{event_key}`
 - 研究沉淀：favorites、collections、watchlists、saved-searches、alert-rules

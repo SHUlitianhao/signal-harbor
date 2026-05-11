@@ -1,4 +1,5 @@
 const state = {
+  industryDomains: [],
   latest: [],
   events: [],
   searchResults: [],
@@ -11,7 +12,8 @@ const state = {
   runtimeStatus: {},
   selectedCollectionItemId: "",
   selectedCollectionTitle: "",
-  activeView: "latest"
+  activeView: "industry",
+  loadedViews: new Set()
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -382,6 +384,185 @@ function eventCard(event) {
   `;
 }
 
+function scoreValue(value) {
+  return Math.round(Number(value || 0));
+}
+
+function industryDirectionKind(domain) {
+  const direction = domain.signal_direction || "";
+  if (direction.includes("利好") || direction.includes("偏强")) return "ok";
+  if (direction.includes("利空") || direction.includes("偏弱") || domain.signal_level === "风险较高") return "error";
+  if (direction.includes("热门") || domain.signal_level === "继续观察") return "warning";
+  return "muted";
+}
+
+function industryScoreGrid(domain) {
+  const items = [
+    ["综合", domain.domain_score],
+    ["热度", domain.attention_score],
+    ["利好", domain.benefit_score],
+    ["风险", domain.risk_score]
+  ];
+  return `
+    <div class="industry-score-grid">
+      ${items
+        .map(
+          ([label, value]) => `
+            <div class="industry-score">
+              <span>${escapeHtml(label)}</span>
+              <strong>${scoreValue(value)}</strong>
+            </div>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function keywordBadges(values, className = "") {
+  return (values || [])
+    .slice(0, 8)
+    .map((value) => `<span class="badge ${className}">${escapeHtml(value)}</span>`)
+    .join("");
+}
+
+function industryDomainCard(domain) {
+  const kind = industryDirectionKind(domain);
+  const catalysts = domain.main_catalysts || [];
+  const risks = domain.risk_flags || [];
+  return `
+    <article class="item-card industry-card" data-open-industry="${escapeHtml(domain.domain_id)}" tabindex="0">
+      <div class="industry-card-title">
+        <span class="badge score">#${Number(domain.rank || 0) || "-"}</span>
+        <h2>${escapeHtml(domain.domain_name || "未命名行业域")}</h2>
+      </div>
+      <p>${escapeHtml(domain.domain_description || "暂无行业域说明。")}</p>
+      ${industryScoreGrid(domain)}
+      <div class="card-meta">
+        <span class="badge translation-status ${kind}">方向：${escapeHtml(domain.signal_direction || "中性")}</span>
+        <span class="badge event-badge">研究优先级：${escapeHtml(domain.signal_level || "暂无明显信号")}</span>
+        <span class="badge">行情确认：${escapeHtml(domain.market_confirmation || "未接入")}</span>
+        <span>${escapeHtml(`${Number(domain.event_count || 0)} 个事件 · ${Number(domain.source_count || 0)} 个来源 · ${Number(domain.evidence_count || 0)} 条证据 · ${Number(domain.related_stock_count || 0)} 只监控样本`)}</span>
+      </div>
+      <div class="notification-context">
+        ${keywordBadges(catalysts)}
+        ${keywordBadges(risks, "risk")}
+      </div>
+      <div class="card-actions">
+        <button class="compact-button" type="button" data-industry-open="${escapeHtml(domain.domain_id)}">行业域详情</button>
+      </div>
+    </article>
+  `;
+}
+
+function industryEvidenceList(refs) {
+  const evidence = refs || [];
+  if (!evidence.length) return "<p>暂无证据。</p>";
+  return `
+    <ul class="industry-evidence-list">
+      ${evidence
+        .map((ref) => {
+          const source = ref.source_name || "未知渠道";
+          const time = formatChinaTime(ref.published_at);
+          const terms = (ref.matched_terms || []).join("、");
+          return `
+            <li>
+              <a href="${escapeHtml(ref.source_url || "#")}" target="_blank" rel="noreferrer">${escapeHtml(ref.title || "证据")}</a>
+              <span class="related-source">${escapeHtml(`${source}${time ? ` · ${time}` : ""}${terms ? ` · 命中：${terms}` : ""}`)}</span>
+            </li>
+          `;
+        })
+        .join("")}
+    </ul>
+  `;
+}
+
+function industryRelatedEvents(events) {
+  const items = events || [];
+  if (!items.length) return "<p>暂无相关事件。</p>";
+  return `
+    <ul class="industry-evidence-list">
+      ${items
+        .map(
+          (event) => `
+            <li>
+              <button class="link-button" type="button" data-industry-event="${escapeHtml(event.event_key || "")}">${escapeHtml(event.title || "相关事件")}</button>
+              <span class="related-source">${escapeHtml(`${Number(event.item_count || 0)} 条 · ${Number(event.source_count || 0)} 个来源 · ${formatChinaTime(event.latest_at)}`)}</span>
+            </li>
+          `
+        )
+        .join("")}
+    </ul>
+  `;
+}
+
+function industryRelatedStocks(stocks, status) {
+  const items = stocks || [];
+  if (!items.length) {
+    return `<p class="muted">${escapeHtml(status || "暂无关联监控股票池结果。")}</p>`;
+  }
+  return `
+    <div class="related-stocks-top10" data-related-stocks-top10="true">
+      ${items
+        .map((stock) => {
+          const metrics = stock.monitoring_metrics || {};
+          const reasons = stock.match_reasons || [];
+          const concepts = stock.matched_concepts || [];
+          const industries = stock.matched_industry_tags || [];
+          const keywords = stock.matched_keywords || [];
+          const evidence = stock.evidence_refs || [];
+          return `
+            <article class="stock-card">
+              <div class="stock-card-title">
+                <span class="badge score">#${Number(stock.association_rank || 0) || "-"}</span>
+                <div>
+                  <h4>${escapeHtml(stock.stock_name || "未命名股票")}</h4>
+                  <span>${escapeHtml(`${stock.exchange || ""} ${stock.stock_code || ""}`.trim())}</span>
+                </div>
+                <strong>${scoreValue(stock.association_score)} 分</strong>
+              </div>
+              <p class="muted">${escapeHtml(stock.research_role || "监控样本")}，用于观察该行业域持续性和后续数据验证。</p>
+              <div class="notification-context">
+                ${keywordBadges(industries)}
+                ${keywordBadges(concepts)}
+                ${keywordBadges(keywords)}
+              </div>
+              <ul class="stock-reasons">
+                ${reasons.map((reason) => `<li>${escapeHtml(reason)}</li>`).join("") || "<li>等待更多公开证据。</li>"}
+              </ul>
+              <div class="event-explain compact">
+                <div><strong>监控指标：</strong>行情 ${escapeHtml(metrics.market_data || "未接入")} · 资金 ${escapeHtml(metrics.capital_flow || "未接入")} · 财务 ${escapeHtml(metrics.financials || "未接入")} · 超额收益 ${escapeHtml(metrics.excess_return_validation || "待验证")}</div>
+                ${stock.notes ? `<div>${escapeHtml(stock.notes)}</div>` : ""}
+              </div>
+              ${industryRelatedEvents(stock.related_events)}
+              ${industryEvidenceList(evidence)}
+            </article>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function renderIndustryDomains() {
+  const el = $("#industryList");
+  el.innerHTML = state.industryDomains.length
+    ? state.industryDomains.map(industryDomainCard).join("")
+    : empty("暂无行业域热度结果。请先采集公开源或刷新最新信息。");
+  el.querySelectorAll("[data-open-industry]").forEach((node) => {
+    node.addEventListener("click", () => guarded(null, () => openIndustryDomainDetail(node.dataset.openIndustry)));
+    node.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") guarded(null, () => openIndustryDomainDetail(node.dataset.openIndustry));
+    });
+  });
+  el.querySelectorAll("[data-industry-open]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      guarded(null, () => openIndustryDomainDetail(button.dataset.industryOpen));
+    });
+  });
+}
+
 function setStatus(message, kind = "error") {
   const banner = $("#statusBanner");
   banner.hidden = false;
@@ -569,6 +750,13 @@ async function loadHealth() {
   $("#healthText").textContent = `${health.items} 条情报 · ${health.sources} 个来源`;
 }
 
+async function loadIndustryDomains() {
+  const payload = await api("/api/industry-domains?window_days=7&limit=5");
+  state.industryDomains = payload.domains || [];
+  $("#industryCount").textContent = `${state.industryDomains.length} 个`;
+  renderIndustryDomains();
+}
+
 async function loadRuntimeStatus() {
   const runtime = await api("/api/runtime/status");
   state.runtimeStatus = runtime;
@@ -645,6 +833,13 @@ async function loadSources() {
   });
 }
 
+async function ensureSourcesLoaded(force = false) {
+  if (force || !state.loadedViews.has("source-data")) {
+    await loadSources();
+    state.loadedViews.add("source-data");
+  }
+}
+
 function renderSourceSelect(target, selectedValue) {
   const select = $(target);
   if (!select) return;
@@ -696,9 +891,13 @@ async function toggleSource(sourceId, enabled) {
     method: "POST",
     body: JSON.stringify({ enabled })
   });
-  await loadSources();
-  await loadLatest();
-  await loadEvents();
+  await ensureSourcesLoaded(true);
+  state.loadedViews.delete("latest");
+  state.loadedViews.delete("events");
+  state.loadedViews.delete("industry");
+  if (["latest", "events", "industry"].includes(state.activeView)) {
+    await loadView(state.activeView, true);
+  }
   setStatus(enabled ? "数据源已启用。" : "数据源已停用。", "ok");
 }
 
@@ -752,9 +951,10 @@ async function createSource(event) {
     })
   });
   resetSourceForm();
-  await loadSources();
-  await loadRuntimeStatus();
-  await loadEvents();
+  await ensureSourcesLoaded(true);
+  state.loadedViews.delete("runtime");
+  state.loadedViews.delete("events");
+  state.loadedViews.delete("industry");
   const collectableTypes = ["rss", "rsshub"];
   setStatus(
     collectableTypes.includes(sourceType)
@@ -765,7 +965,8 @@ async function createSource(event) {
 }
 
 async function loadLatest() {
-  const params = new URLSearchParams({ limit: "50" });
+  await ensureSourcesLoaded();
+  const params = new URLSearchParams({ limit: "30" });
   const sourceId = $("#latestSourceSelect").value;
   const translationStatus = $("#latestTranslationStatusSelect").value;
   if (sourceId) params.set("source_id", sourceId);
@@ -794,7 +995,7 @@ function renderEvents(target, events, emptyText) {
 }
 
 async function loadEvents() {
-  const payload = await api("/api/events?limit=50");
+  const payload = await api("/api/events?limit=20");
   state.events = payload.events || [];
   $("#eventCount").textContent = `${state.events.length} 组`;
   renderEvents("#eventList", state.events, "暂无事件组。请先采集公开源或刷新最新流。");
@@ -818,9 +1019,10 @@ async function refreshLatestFeed(event) {
       ingestError = error;
     }
     await loadHealth();
+    await loadIndustryDomains();
     await loadLatest();
-    await loadEvents();
-    await loadAlerts();
+    state.loadedViews.delete("events");
+    state.loadedViews.delete("alerts");
     if (state.searchResults.length) await runSearch();
     try {
       await loadRuntimeStatus();
@@ -926,8 +1128,8 @@ async function loadFavorites() {
 
 async function loadAlerts() {
   const [notifications, taskRuns, alertRules] = await Promise.all([
-    api("/api/notifications"),
-    api("/api/task-runs"),
+    api("/api/notifications?limit=20"),
+    api("/api/task-runs?limit=20"),
     api("/api/alert-rules")
   ]);
   state.alertRules = alertRules.alert_rules;
@@ -1062,10 +1264,12 @@ async function runPublicIngest(event) {
     });
     const ingest = payload.ingest || {};
     await loadRuntimeStatus();
-    await loadSources();
-    await loadLatest();
-    await loadEvents();
-    await loadAlerts();
+    await ensureSourcesLoaded(true);
+    state.loadedViews.delete("industry");
+    state.loadedViews.delete("latest");
+    state.loadedViews.delete("events");
+    state.loadedViews.delete("alerts");
+    await loadView(state.activeView, true);
     if (state.searchResults.length) await runSearch();
     const kind = ingest.status === "success" || ingest.status === "running" ? "ok" : "error";
     const message =
@@ -1076,6 +1280,57 @@ async function runPublicIngest(event) {
   } finally {
     button.disabled = false;
   }
+}
+
+async function openIndustryDomainDetail(domainId) {
+  if (!domainId) return;
+  const payload = await api(`/api/industry-domains/${encodeURIComponent(domainId)}?window_days=7`);
+  const domain = payload.domain;
+  const explanation = domain.score_explanation || {};
+  $("#detailContent").innerHTML = `
+    <h2>行业域：${escapeHtml(domain.domain_name || "未命名行业域")}</h2>
+    <p>${escapeHtml(domain.domain_description || "暂无行业域说明。")}</p>
+    <div class="card-meta">
+      <span class="badge score">综合 ${scoreValue(domain.domain_score)} 分</span>
+      <span class="badge translation-status ${industryDirectionKind(domain)}">方向：${escapeHtml(domain.signal_direction || "中性")}</span>
+      <span class="badge event-badge">研究优先级：${escapeHtml(domain.signal_level || "暂无明显信号")}</span>
+      <span class="badge">行情确认：${escapeHtml(domain.market_confirmation || "未接入")}</span>
+    </div>
+    ${industryScoreGrid(domain)}
+    <h3>分数拆解</h3>
+    <div class="event-explain">
+      <div><strong>事件数量：</strong>${scoreValue(explanation.event_count_score)} 分</div>
+      <div><strong>热度增速：</strong>${scoreValue(explanation.velocity_score)} 分</div>
+      <div><strong>来源广度：</strong>${scoreValue(explanation.source_breadth_score)} 分</div>
+      <div><strong>来源质量：</strong>${scoreValue(explanation.source_quality_score)} 分</div>
+      <div><strong>同事件确认：</strong>${scoreValue(explanation.same_event_confirmation_score)} 分</div>
+      <div><strong>时间衰减：</strong>${scoreValue(explanation.recency_score)} 分</div>
+      <div><strong>统计窗口：</strong>${escapeHtml(String(explanation.window_days || 7))} 天</div>
+    </div>
+    <h3>主要催化</h3>
+    <div class="notification-context">${keywordBadges(domain.main_catalysts) || "<span class=\"muted\">暂无明确催化。</span>"}</div>
+    <h3>风险提示</h3>
+    <div class="notification-context">${keywordBadges(domain.risk_flags, "risk") || "<span class=\"muted\">暂无集中风险词。</span>"}</div>
+    <h3>命中关键词</h3>
+    <div class="notification-context">${keywordBadges(domain.matched_keywords) || "<span class=\"muted\">暂无。</span>"}</div>
+    <h3>相关事件</h3>
+    ${industryRelatedEvents(domain.related_events)}
+    <h3>关联监控股票池 Top 10</h3>
+    <p class="muted">以下仅为研究监控样本，用于观察行业方向持续性和后续超额收益验证。</p>
+    ${industryRelatedStocks(domain.related_stocks_top10, domain.related_stock_status)}
+    <h3>正面证据</h3>
+    ${industryEvidenceList(domain.positive_evidence)}
+    <h3>负面证据</h3>
+    ${industryEvidenceList(domain.negative_evidence)}
+    <h3>全部证据</h3>
+    ${industryEvidenceList(domain.evidence_refs)}
+    <h3>下一步观察点</h3>
+    <ul>${(domain.next_observation_points || []).map((value) => `<li>${escapeHtml(value)}</li>`).join("") || "<li>暂无</li>"}</ul>
+  `;
+  $("#detailContent").querySelectorAll("[data-industry-event]").forEach((button) => {
+    button.addEventListener("click", () => guarded(null, () => openEventDetail(button.dataset.industryEvent)));
+  });
+  $("#detailPanel").classList.add("open");
 }
 
 async function openNotification(index) {
@@ -1257,18 +1512,40 @@ function splitKeywords(value) {
 }
 
 async function refreshAll() {
-  await guarded("#sourceList", loadSources);
-  const results = await Promise.all([
-    guarded(null, loadHealth),
-    guarded("#latestList", loadLatest),
-    guarded("#eventList", loadEvents),
-    guarded("#collectionList", loadCollections),
-    guarded("#favoriteList", loadFavorites),
-    guarded("#notificationList", loadAlerts),
-    guarded("#savedSearchList", loadSavedSearches),
-    guarded("#runtimeStatusPanel", loadRuntimeStatus)
-  ]);
-  if (results.every(Boolean)) {
+  const results = await Promise.all([guarded(null, loadHealth), guarded(null, () => loadView(state.activeView, true))]);
+  if (results.every(Boolean)) clearStatus();
+}
+
+async function loadView(view, force = false) {
+  if (!force && state.loadedViews.has(view)) return;
+  if (view === "industry") {
+    await loadIndustryDomains();
+  } else if (view === "latest") {
+    await loadLatest();
+  } else if (view === "events") {
+    await loadEvents();
+  } else if (view === "source") {
+    await ensureSourcesLoaded(force);
+  } else if (view === "search") {
+    await ensureSourcesLoaded(force);
+    await loadSavedSearches();
+  } else if (view === "collections") {
+    await loadCollections();
+  } else if (view === "favorites") {
+    await loadFavorites();
+  } else if (view === "alerts") {
+    await loadAlerts();
+  } else if (view === "runtime") {
+    await loadRuntimeStatus();
+  }
+  state.loadedViews.add(view);
+  if (view === "source") state.loadedViews.add("source-data");
+}
+
+async function refreshCurrentView() {
+  const ok = await guarded(null, loadHealth);
+  const viewOk = await guarded(null, () => loadView(state.activeView, true));
+  if (ok && viewOk) {
     clearStatus();
   }
 }
@@ -1278,13 +1555,15 @@ function switchView(view) {
   document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.view === view));
   document.querySelectorAll(".view").forEach((node) => node.classList.remove("active"));
   $(`#${view}View`).classList.add("active");
+  guarded(null, () => loadView(view));
 }
 
 document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => switchView(tab.dataset.view));
 });
 
-$("#refreshButton").addEventListener("click", refreshAll);
+$("#refreshButton").addEventListener("click", refreshCurrentView);
+$("#industryRefreshButton").addEventListener("click", () => guarded("#industryList", loadIndustryDomains));
 $("#latestRefreshButton").addEventListener("click", (event) => guarded("#latestList", () => refreshLatestFeed(event)));
 $("#eventRefreshButton").addEventListener("click", () => guarded("#eventList", loadEvents));
 $("#latestSourceSelect").addEventListener("change", () => guarded("#latestList", loadLatest));

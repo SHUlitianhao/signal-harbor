@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 from signal_harbor.adapters import JsonSourceAdapter, PublicSourceConfig
 from signal_harbor.api import create_server
 from signal_harbor.core import IngestPipeline
-from signal_harbor.domain import Item, Source
+from signal_harbor.domain import Item, Notification, Source
 from signal_harbor.storage import SQLiteStore
 from signal_harbor.translation import load_translation_provider
 
@@ -276,6 +276,7 @@ class TranslationTest(unittest.TestCase):
         self.assertIn("美联储", detail["item"]["translation"]["translated_title"])
         self.assertIn("通胀", detail["item"]["translation"]["translated_summary"])
 
+        self.store.add_notification(Notification(item_id=item["id"], title=f"提醒：{item['title']}", message="翻译提醒"))
         notifications = self.get_json(base_url, "/api/notifications")["notifications"]
         self.assertGreaterEqual(len(notifications), 1)
         notification = notifications[0]

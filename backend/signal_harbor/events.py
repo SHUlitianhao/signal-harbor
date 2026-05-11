@@ -7,7 +7,12 @@ from typing import Any, Callable
 from signal_harbor.domain import stable_hash
 
 
-EVENT_CONTEXT_LIMIT = 500
+EVENT_CONTEXT_LIMIT = 200
+EVENT_ITEM_LIST_LIMIT = 3
+EVENT_ITEM_DETAIL_LIMIT = 20
+EVENT_EVIDENCE_LIST_LIMIT = 3
+EVENT_EVIDENCE_DETAIL_LIMIT = 20
+EVENT_RELATED_ITEM_LIMIT = 8
 EVENT_TIME_WINDOW_SECONDS = 36 * 60 * 60
 EVENT_STOPWORDS = {
     "rsshub",
@@ -116,7 +121,12 @@ def decorate_single_item_event(
     return item
 
 
-def event_group_payload(group: list[dict[str, Any]], insight_lookup: InsightLookup) -> dict[str, Any]:
+def event_group_payload(
+    group: list[dict[str, Any]],
+    insight_lookup: InsightLookup,
+    item_limit: int | None = None,
+    evidence_limit: int | None = None,
+) -> dict[str, Any]:
     if not group:
         return {}
     lookup = _cached_insight_lookup(insight_lookup)
@@ -124,6 +134,10 @@ def event_group_payload(group: list[dict[str, Any]], insight_lookup: InsightLook
     if "event_key" not in primary:
         apply_event_group(group, lookup)
     items = [_event_item_summary(item, lookup) for item in group]
+    visible_items = items[:item_limit] if item_limit is not None else items
+    related_items = visible_items[1:]
+    evidence_refs = primary.get("event_evidence_refs", [])
+    visible_evidence = evidence_refs[:evidence_limit] if evidence_limit is not None else evidence_refs
     return {
         "event_key": primary.get("event_key", ""),
         "event_group": primary.get("event_group", {}),
@@ -131,19 +145,20 @@ def event_group_payload(group: list[dict[str, Any]], insight_lookup: InsightLook
         "primary_item_id": primary.get("id", ""),
         "item_count": len(group),
         "related_count": max(0, len(group) - 1),
-        "related_items": items[1:],
-        "event_items": items,
+        "related_items": related_items,
+        "event_items": visible_items,
         "source_count": primary.get("source_count", 0),
         "event_sources": primary.get("event_sources", []),
         "event_latest_at": primary.get("event_latest_at", ""),
         "event_score": primary.get("event_score", primary.get("score", 0)),
-        "event_evidence_refs": primary.get("event_evidence_refs", []),
+        "event_evidence_refs": visible_evidence,
         "event_merge_reason": primary.get("event_merge_reason", ""),
         "matched_tokens": primary.get("matched_tokens", []),
         "matched_topics": primary.get("matched_topics", []),
         "time_window": primary.get("time_window", {}),
         "conflict_guard": primary.get("conflict_guard", {}),
         "event_summary": primary.get("event_summary", ""),
+        "is_compact": item_limit is not None or evidence_limit is not None,
     }
 
 
@@ -255,12 +270,12 @@ def apply_event_group(
         item["event_key"] = event_key
         item["event_group"] = dict(event_group)
         item["related_count"] = len(related)
-        item["related_items"] = related
+        item["related_items"] = related[:EVENT_RELATED_ITEM_LIMIT]
         item["source_count"] = len(sources)
         item["event_sources"] = sources
         item["event_latest_at"] = latest_item.get("published_at", "")
         item["event_score"] = max(float(candidate.get("score") or 0.0) for candidate in group)
-        item["event_evidence_refs"] = evidence_refs
+        item["event_evidence_refs"] = evidence_refs[:EVENT_ITEM_DETAIL_LIMIT]
         item["event_merge_reason"] = explanation["merge_reason"]
         item["matched_tokens"] = explanation["matched_tokens"]
         item["matched_topics"] = explanation["matched_topics"]

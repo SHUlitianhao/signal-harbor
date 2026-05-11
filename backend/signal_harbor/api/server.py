@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from signal_harbor.config import AppConfig
 from signal_harbor.domain import AlertRule, Collection, Favorite, SavedSearch, Source, Watchlist
+from signal_harbor.quant import compute_industry_domain_detail, compute_industry_domains, load_industry_domain_catalog
 from signal_harbor.runtime import PublicIngestRuntime
 from signal_harbor.storage import SQLiteStore
 from signal_harbor.translation import load_translation_provider
@@ -115,6 +116,15 @@ class SignalHarborHandler(BaseHTTPRequestHandler):
             self._json(self._runtime_status())
         elif path == "/api/sources":
             self._json({"sources": store.list_sources()})
+        elif path == "/api/industry-domains":
+            self._json({"domains": self._industry_domains(query)})
+        elif path.startswith("/api/industry-domains/"):
+            domain_id = unquote(path.removeprefix("/api/industry-domains/").strip("/"))
+            domain = self._industry_domain_detail(domain_id, query)
+            if not domain:
+                self._json({"error": "industry domain not found"}, HTTPStatus.NOT_FOUND)
+                return
+            self._json({"domain": domain})
         elif path == "/api/events":
             self._json({"events": store.list_events(limit=self._int_query(query, "limit", 50))})
         elif path.startswith("/api/events/"):
@@ -175,9 +185,9 @@ class SignalHarborHandler(BaseHTTPRequestHandler):
         elif path == "/api/alert-rules":
             self._json({"alert_rules": store.list_alert_rules()})
         elif path == "/api/task-runs":
-            self._json({"task_runs": store.list_task_runs()})
+            self._json({"task_runs": store.list_task_runs(limit=self._int_query(query, "limit", 50))})
         elif path == "/api/notifications":
-            self._json({"notifications": store.list_notifications()})
+            self._json({"notifications": store.list_notifications(limit=self._int_query(query, "limit", 20))})
         else:
             self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
 
@@ -365,6 +375,26 @@ class SignalHarborHandler(BaseHTTPRequestHandler):
             "items_filtered": run.get("items_filtered", 0),
             "error": run.get("error", ""),
         }
+
+    def _industry_domains(self, query: dict[str, list[str]]) -> list[dict[str, Any]]:
+        catalog = load_industry_domain_catalog()
+        items = self.server.store.list_industry_domain_candidate_items()
+        return compute_industry_domains(
+            items,
+            catalog,
+            window_days=self._int_query(query, "window_days", 7),
+            limit=self._int_query(query, "limit", 5),
+        )
+
+    def _industry_domain_detail(self, domain_id: str, query: dict[str, list[str]]) -> dict[str, Any] | None:
+        catalog = load_industry_domain_catalog()
+        items = self.server.store.list_industry_domain_candidate_items()
+        return compute_industry_domain_detail(
+            domain_id,
+            items,
+            catalog,
+            window_days=self._int_query(query, "window_days", 7),
+        )
 
     def _run_public_ingest_task(self) -> None:
         runtime = self.server.runtime_manager

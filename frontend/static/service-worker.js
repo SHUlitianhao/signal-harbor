@@ -1,4 +1,4 @@
-const CACHE_NAME = "signal-harbor-shell-v19";
+const CACHE_NAME = "signal-harbor-shell-v22";
 const SHELL = ["/", "/index.html", "/styles.css", "/app.js", "/manifest.webmanifest", "/icon.svg"];
 
 self.addEventListener("install", (event) => {

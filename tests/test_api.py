@@ -138,6 +138,7 @@ class ApiTest(unittest.TestCase):
         )
         latest = self.get_json("/api/items/latest")["items"]
         group = next(item for item in latest if item["related_count"] == 1 and "宁德时代" in json.dumps(item, ensure_ascii=False))
+        self.store.add_notification(Notification(item_id=group["id"], title=f"提醒：{group['title']}", message="高分同事件提醒"))
         item_ids = {group["id"], *[related["id"] for related in group["related_items"]]}
         return group, item_ids
 
@@ -286,6 +287,7 @@ class ApiTest(unittest.TestCase):
         event = [item for item in events if item["event_key"] == group["event_key"]][0]
         self.assertEqual(event["item_count"], 2)
         self.assertEqual(event["source_count"], 2)
+        self.assertTrue(event["is_compact"])
         self.assertEqual(len(event["event_items"]), 2)
         self.assertIn("标题", event["event_merge_reason"])
         self.assertEqual(event["conflict_guard"]["blocked"], False)
@@ -310,6 +312,7 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(len(event_notifications), 1)
         self.assertEqual(event_notifications[0]["related_count"], 1)
         self.assertEqual(event_notifications[0]["source_count"], 2)
+        self.assertLessEqual(len(event_notifications[0]["related_items"]), 3)
 
     def test_events_api_keeps_unmerged_items_visible_with_explanation(self) -> None:
         events = self.get_json("/api/events")["events"]
@@ -322,6 +325,84 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(event["time_window"]["hours"], 36)
         self.assertFalse(event["conflict_guard"]["blocked"])
         self.assertEqual(event["event_items"][0]["source_url"], "https://example.test/api")
+
+    def test_industry_domains_api_returns_ranked_domains_and_detail(self) -> None:
+        pipeline = IngestPipeline(self.store)
+        pipeline.run_adapter(
+            MemorySourceAdapter(
+                Source(
+                    id="src_industry_ai",
+                    name="行业域来源 A",
+                    source_type="rsshub",
+                    location="memory://industry-ai",
+                    metadata={"quality_tier": "rsshub"},
+                ),
+                [
+                    RawContent(
+                        source_id="src_industry_ai",
+                        source_type="rsshub",
+                        source_url="https://industry.test/ai-capex",
+                        title="AI 数据中心资本开支推动光模块订单增长",
+                        text="海外 AI 资本开支提升，服务器和光模块订单增长，电网投资受到关注。",
+                        published_at="2026-05-10T10:00:00+08:00",
+                        tags=["AI", "数据中心", "光模块", "订单"],
+                    )
+                ],
+            )
+        )
+
+        payload = self.get_json("/api/industry-domains?window_days=30&limit=10")
+        domains = payload["domains"]
+        ai_domain = [item for item in domains if item["domain_id"] == "ai-compute-power"][0]
+
+        self.assertGreater(ai_domain["domain_score"], 0)
+        self.assertGreater(ai_domain["attention_score"], 0)
+        self.assertGreater(ai_domain["benefit_score"], 0)
+        self.assertEqual(ai_domain["market_confirmation"], "未接入")
+        self.assertIn("short_term_catalyst_score", ai_domain)
+        self.assertIn("continuity_score", ai_domain)
+        self.assertIn("noise_penalty", ai_domain)
+        self.assertIn("recommendation_reason", ai_domain)
+        self.assertIn("related_stock_count", ai_domain)
+        self.assertGreater(ai_domain["related_stock_count"], 0)
+        self.assertEqual(ai_domain["evidence_refs"][0]["source_url"], "https://industry.test/ai-capex")
+        self.assertIn("related_events", ai_domain)
+        self.assertNotIn("建议买入", json.dumps(ai_domain, ensure_ascii=False))
+        self.assertNotIn("推荐买入", json.dumps(ai_domain, ensure_ascii=False))
+        self.assertNotIn("仓位建议", json.dumps(ai_domain, ensure_ascii=False))
+
+        detail = self.get_json(f"/api/industry-domains/{urllib.parse.quote(ai_domain['domain_id'])}?window_days=30")["domain"]
+        self.assertEqual(detail["domain_id"], "ai-compute-power")
+        self.assertIn("score_explanation", detail)
+        self.assertIn("next_observation_points", detail)
+        self.assertEqual(detail["evidence_refs"][0]["source_name"], "行业域来源 A")
+        self.assertIn("related_stocks_top10", detail)
+        self.assertLessEqual(len(detail["related_stocks_top10"]), 10)
+        self.assertGreater(len(detail["related_stocks_top10"]), 0)
+        first_stock = detail["related_stocks_top10"][0]
+        self.assertIn("stock_code", first_stock)
+        self.assertIn("association_score", first_stock)
+        self.assertIn("match_reasons", first_stock)
+        self.assertIn("evidence_refs", first_stock)
+        self.assertEqual(first_stock["monitoring_metrics"]["market_data"], "未接入")
+        self.assertEqual(first_stock["monitoring_metrics"]["excess_return_validation"], "待验证")
+        detail_text = json.dumps(detail, ensure_ascii=False)
+        self.assertNotIn("买入", detail_text)
+        self.assertNotIn("卖出", detail_text)
+        self.assertNotIn("仓位", detail_text)
+        self.assertNotIn("建议买入", detail_text)
+        self.assertNotIn("推荐买入", detail_text)
+        self.assertNotIn("仓位建议", detail_text)
+
+        with self.assertRaises(urllib.error.HTTPError) as response:
+            urllib.request.urlopen(f"{self.base_url}/api/industry-domains/not-found", timeout=5)
+        self.assertEqual(response.exception.code, 404)
+
+    def test_industry_domains_api_handles_empty_data(self) -> None:
+        payload = self.get_json("/api/industry-domains?window_days=1&limit=5")
+
+        self.assertIn("domains", payload)
+        self.assertIsInstance(payload["domains"], list)
 
     def test_different_events_are_not_grouped(self) -> None:
         pipeline = IngestPipeline(self.store)
@@ -430,6 +511,7 @@ class ApiTest(unittest.TestCase):
         self.assertNotEqual(detail["translation"]["status"], "not_required")
         self.assertIn("流通单位", detail["translation"]["translated_summary"])
 
+        self.store.add_notification(Notification(item_id=latest["id"], title=f"提醒：{latest['title']}", message="翻译提醒"))
         notifications = self.get_json("/api/notifications")["notifications"]
         notification = [item for item in notifications if item["item_id"] == latest["id"]][0]
         self.assertEqual(notification["translation_status"], "translated")

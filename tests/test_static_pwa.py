@@ -21,7 +21,13 @@ class StaticPwaTest(unittest.TestCase):
             'id="alertRuleList"',
             'id="statusBanner"',
             'id="appVersion"',
-            'data-app-version="1.3"',
+            'data-app-version="1.6"',
+            'data-view="industry"',
+            'id="industryView"',
+            'id="industryCount"',
+            'id="industryRefreshButton"',
+            'id="industryList"',
+            "行业域热度",
             'id="latestRefreshButton"',
             'data-view="events"',
             'id="eventsView"',
@@ -53,6 +59,33 @@ class StaticPwaTest(unittest.TestCase):
 
         for marker in [
             "/api/saved-searches",
+            "/api/industry-domains",
+            "loadIndustryDomains",
+            "loadView",
+            "refreshCurrentView",
+            "loadedViews",
+            "industryDomainCard",
+            "openIndustryDomainDetail",
+            "industryScoreGrid",
+            "industryEvidenceList",
+            "market_confirmation",
+            "related_stock_count",
+            "related_stocks_top10",
+            "industryRelatedStocks",
+            "related-stocks-top10",
+            "data-related-stocks-top10",
+            "association_score",
+            "match_reasons",
+            "monitoring_metrics",
+            "excess_return_validation",
+            "关联监控股票池 Top 10",
+            "研究监控样本",
+            "attention_score",
+            "benefit_score",
+            "risk_score",
+            "domain_score",
+            "研究优先级",
+            "行情确认",
             "/api/collections/${collectionId}/items",
             "/api/alert-rules/${alertRuleId}/toggle",
             "/api/sources/${sourceId}/toggle",
@@ -132,6 +165,13 @@ class StaticPwaTest(unittest.TestCase):
         ]:
             self.assertIn(marker, app_js)
 
+        nav = index_html.split('<nav class="tabs"', 1)[1].split("</nav>", 1)[0]
+        self.assertLess(nav.index('data-view="industry"'), nav.index('data-view="latest"'))
+        self.assertIn('<button class="tab active" type="button" data-view="industry">行业域</button>', nav)
+        industry_section = index_html.split('<section id="industryView"', 1)[1].split('<section id="latestView"', 1)[0]
+        self.assertIn('class="view active"', index_html.split('<section id="industryView"', 1)[1].split(">", 1)[0])
+        self.assertIn('id="industryList"', industry_section)
+
         latest_section = index_html.split('<section id="latestView"', 1)[1].split('<section id="sourceView"', 1)[0]
         self.assertNotIn('id="sourceList"', latest_section)
         self.assertNotIn('id="sourceForm"', latest_section)
@@ -151,6 +191,12 @@ class StaticPwaTest(unittest.TestCase):
         self.assertIn(".event-card", styles_css)
         self.assertIn(".event-explain", styles_css)
         self.assertIn(".event-source-list", styles_css)
+        self.assertIn(".industry-card", styles_css)
+        self.assertIn(".industry-score-grid", styles_css)
+        self.assertIn(".industry-evidence-list", styles_css)
+        self.assertIn(".related-stocks-top10", styles_css)
+        self.assertIn(".stock-card", styles_css)
+        self.assertIn(".stock-reasons", styles_css)
         self.assertIn(".related-items", styles_css)
         self.assertIn(".related-list", styles_css)
         self.assertIn(".related-source", styles_css)
@@ -160,11 +206,18 @@ class StaticPwaTest(unittest.TestCase):
         self.assertIn(".stats-grid", styles_css)
         self.assertIn(".stat-card", styles_css)
         self.assertIn("white-space: normal", styles_css)
+        combined = "\n".join([index_html, app_js])
+        self.assertNotIn("买入", combined)
+        self.assertNotIn("卖出", combined)
+        self.assertNotIn("仓位", combined)
+        self.assertNotIn("建议买入", combined)
+        self.assertNotIn("推荐买入", combined)
+        self.assertNotIn("仓位建议", combined)
 
     def test_service_worker_keeps_api_out_of_shell_cache(self) -> None:
         service_worker = (ROOT / "frontend" / "static" / "service-worker.js").read_text(encoding="utf-8")
 
-        self.assertIn('const CACHE_NAME = "signal-harbor-shell-v19"', service_worker)
+        self.assertIn('const CACHE_NAME = "signal-harbor-shell-v22"', service_worker)
         self.assertIn('if (url.pathname.startsWith("/api/")) return;', service_worker)
 
     def test_translation_main_tab_and_runtime_maintenance_entry_are_removed(self) -> None:

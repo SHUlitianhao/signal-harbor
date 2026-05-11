@@ -11,12 +11,13 @@
 5. ModelProvider 生成规则摘要。
 6. TranslationProvider 对英文信息源生成本地词典翻译结果。
 7. Scorer 输出价值评分和信号。
-8. Notifier 写入站内消息。
-9. Storage 使用 FTS5 优先、LIKE fallback 的搜索能力提供多条件检索，并通过 `backend/signal_harbor/events.py` 在读取 latest/search/detail/notifications 时运行时计算同事件归并字段。
-10. Runtime 层提供公开源启动采集、手动采集、后台定时采集和运行状态汇总；采集任务使用独立 SQLite 连接并串行化，避免和 HTTP 请求共享同一连接写入。
-11. API 将最新流、搜索、详情、收藏、专题、观察清单、保存搜索、运行状态和提醒记录提供给前端；同一事件的多来源报道以增量字段形式返回，不删除旧字段。
-12. 静态 PWA 在桌面和 Android 手机浏览器中消费 API，并提供保存搜索、收藏、加入专题、提醒规则管理、翻译管理、运行状态、手动公开源采集、英文源中文辅助阅读和弱网提示。
-13. 安全远程访问入口在需要时将手机端请求转发到本机后端；未补访问保护前，不允许直接把后端端口暴露到公网。
+8. Quant/IndustryDomain 层读取 Item、Insight、Event 和 Source 元数据，运行时计算行业域热度、利好/风险分和证据链。
+9. Notifier 写入站内消息。
+10. Storage 使用 FTS5 优先、LIKE fallback 的搜索能力提供多条件检索，并通过 `backend/signal_harbor/events.py` 在读取 latest/search/detail/notifications 时运行时计算同事件归并字段。
+11. Runtime 层提供公开源启动采集、手动采集、后台定时采集和运行状态汇总；采集任务使用独立 SQLite 连接并串行化，避免和 HTTP 请求共享同一连接写入。
+12. API 将行业域、最新流、搜索、详情、收藏、专题、观察清单、保存搜索、运行状态和提醒记录提供给前端；同一事件的多来源报道以增量字段形式返回，不删除旧字段。
+13. 静态 PWA 在桌面和 Android 手机浏览器中消费 API，并以“行业域”为默认第一屏，同时提供保存搜索、收藏、加入专题、提醒规则管理、运行状态、手动公开源采集、英文源中文辅助阅读和弱网提示。
+14. 安全远程访问入口在需要时将手机端请求转发到本机后端；未补访问保护前，不允许直接把后端端口暴露到公网。
 
 ## 2. 数据流
 
@@ -245,7 +246,38 @@ HTML 公开源边界：
 
 - `RuleScorer`：根据高价值关键词、风险词和附件证据打分。
 
-### 3.5 Notifier
+### 3.5 Quant / Industry Domains
+
+位置：`backend/signal_harbor/quant/`
+
+职责：
+
+- 把公开源新闻和同事件归并结果转成 A 股行业域研究优先级。
+- 读取 `config/industry_domains.example.json` 中的行业域关键词、概念标签、申万行业标签、正向词、风险词和观察点。
+- 读取 `config/stock_universe.example.json` 中的 A 股监控样本、申万行业、概念标签、业务关键词和行业域映射。
+- 复用现有 Item、Insight、Event 和 Source 元数据，不修改采集链路和 SQLite schema。
+- 输出 `attention_score`、`benefit_score`、`risk_score`、`domain_score`、`signal_direction`、`signal_level`、`market_confirmation`、`related_events`、`evidence_refs` 和 `related_stocks_top10`。
+- `related_stocks_top10` 是监控样本池，包含关联度、排序、选择理由、命中标签、相关事件、证据链接和行情/资金/财务/超额收益验证状态。
+
+当前实现：
+
+- 第一阶段只做新闻/事件驱动评分和配置驱动股票池关联。
+- `attention_score` 来自短期强催化和持续热点：短期看 24-72 小时强催化，持续看 7-14 天多来源确认，并对通用词和单来源重复刷屏做噪声扣分。
+- `benefit_score` 来自政策支持、订单、涨价、招标、资本开支、需求增长等正向词。
+- `risk_score` 来自监管、制裁、下调、亏损、降价、库存、需求下滑等风险词。
+- `domain_score = short_term_catalyst_score + continuity_score + benefit_score * 0.5 - risk_score * 0.8 - noise_penalty`。
+- 当前 API 还返回 `short_term_catalyst_score`、`continuity_score`、`noise_penalty`、`fresh_event_count`、`sustained_event_count` 和 `recommendation_reason`，用于解释推荐原因。
+- `market_confirmation` 固定为“未接入”，后续行情/资金/财务数据接入后再扩展。
+- `related_stocks_top10` 使用行业分类、概念标签、业务关键词、新闻/事件共现、来源质量、时间衰减和风险扣分计算关联度；行情、资金、财务和一致预期验证仍显示为“未接入/待验证”。
+
+边界：
+
+- 不输出直接买卖建议、仓位建议或交易指令。
+- 关联股票池只作为监控样本和研究验证对象，不作为买入列表。
+- 不接行情 API、券商接口、外部大模型、向量数据库或回测框架。
+- 所有结果必须保留原始 URL、来源、发布时间、事件 key 和证据引用。
+
+### 3.6 Notifier
 
 位置：`backend/signal_harbor/notifiers/`
 
@@ -258,10 +290,10 @@ HTML 公开源边界：
 
 - `InAppNotifier`：当评分达到阈值或存在风险词时写入站内消息。
 - 写入 Notification 前会用运行时事件归并规则检查近期通知；同一事件的多来源命中会降噪为一条主提醒，并在提醒卡片中展示相关来源。
-- `GET /api/notifications` 保留通知原始字段，同时联表补充 `item_title`、`translated_title`、`translated_summary`、`source_id`、`source_name`、`source_url`、`score`、`tags`、`risk_flags`、`translation_status`、`is_clickable`、`detail_url` 和 `system_note`。
+- `GET /api/notifications` 默认返回最近 20 条 compact 消息，按事件降噪，同时联表补充 `item_title`、`translated_title`、`translated_summary`、`source_id`、`source_name`、`source_url`、`score`、`tags`、`risk_flags`、`translation_status`、`is_clickable`、`detail_url` 和 `system_note`。
 - 情报类 Notification 通过 `item_id` 跳转到 Item 详情；系统类 Notification 没有 `item_id` 时返回不可跳转状态。
 
-### 3.6 Storage
+### 3.7 Storage
 
 位置：`backend/signal_harbor/storage/`
 
@@ -288,7 +320,7 @@ HTML 公开源边界：
 
 另有 `Notification` 作为站内消息记录，用于承接提醒能力。
 
-#### 3.6.1 同事件归并
+#### 3.7.1 同事件归并
 
 当前实现是可审计规则 MVP，不新增事件表，不改变 `canonical_hash` 完全重复去重语义。`backend/signal_harbor/events.py` 负责标题 token、实体/标签重叠、时间窗口和冲突保护判断；`SQLiteStore` 只负责取数、调用 helper 并组装 API 返回。读取 latest/search/detail/notifications 时运行时计算：
 
@@ -321,7 +353,7 @@ HTML 公开源边界：
 - 每条相关报道仍保留 `source_url`、`source_name`、`published_at` 和证据引用。
 - 不做 embedding、向量数据库、外部大模型事件判断或长周期复杂事件链追踪。
 
-#### 3.6.2 数据保留
+#### 3.7.2 数据保留
 
 默认不自动删除 `items`、`task_runs`、`notifications`、`insights`、`extractions` 或 `assets`。长期运行时 SQLite 会增长，清理必须由用户显式执行。
 
@@ -331,7 +363,7 @@ HTML 公开源边界：
 - `--execute` 才会删除超过 `--days` 的 `task_runs` 和 `notifications`。
 - 不删除情报 `items`，不删除原始 URL、证据引用、收藏和专题。
 
-### 3.7 API
+### 3.8 API
 
 位置：`backend/signal_harbor/api/`
 
@@ -346,6 +378,11 @@ HTML 公开源边界：
 
 - `POST /api/collections/{id}/items`：向已有专题追加条目，重复追加保持幂等。
 - `POST /api/alert-rules/{id}/toggle`：启用或停用已有提醒规则。
+
+行业域热度阶段新增：
+
+- `GET /api/industry-domains`：返回行业域榜单，支持 `window_days` 和 `limit`。
+- `GET /api/industry-domains/{domain_id}`：返回单个行业域详情、分数拆解、主要催化、风险提示、相关事件、正/负面证据、下一步观察点和原始证据链接；后续扩展 `related_stocks_top10` 监控股票池字段。
 
 源级过滤阶段新增：
 
@@ -379,10 +416,10 @@ HTML 公开源边界：
 
 - `/api/items/latest`、`/api/items/search`、`/api/items/{id}` 和 `/api/notifications` 增量返回 `event_key`、`related_count`、`related_items`、`source_count`、`event_sources` 和 `event_evidence_refs` 等字段。
 - latest/search 默认合并展示同一事件的主卡片；详情和提醒页仍可看到每条相关报道的原始证据 URL。
-- `GET /api/events`：返回运行时事件组列表，包含事件标题、来源数、条目数、最近时间、最高分、证据引用和归并解释。
-- `GET /api/events/{event_key}`：返回单个事件详情，包含 `event_items`、`matched_tokens`、`matched_topics`、`time_window` 和 `conflict_guard`。
+- `GET /api/events`：返回 compact 事件组列表，包含事件标题、来源数、条目数、最近时间、最高分、少量证据引用和归并解释。
+- `GET /api/events/{event_key}`：返回单个事件详情，包含更多 `event_items`、`matched_tokens`、`matched_topics`、`time_window` 和 `conflict_guard`，但仍设置上限避免大 payload。
 
-### 3.8 Search
+### 3.9 Search
 
 位置：`backend/signal_harbor/storage/sqlite.py`
 
@@ -398,13 +435,16 @@ HTML 公开源边界：
 - FTS5 可用且存在 `query` 时，优先按 FTS rank 排序，再按 `published_at` 和 `created_at` 倒序。
 - fallback 或无关键词查询时，按 `published_at` 和 `created_at` 倒序稳定返回。
 
-### 3.9 PWA
+### 3.10 PWA
 
 位置：`frontend/static/`
 
 职责：
 
 - 使用无构建步骤的 HTML/CSS/JavaScript 提供移动端可操作界面。
+- 将“行业域”作为主导航第一项和默认第一屏，展示热门行业域、综合分、热度分、利好分、风险分、方向、研究优先级、行情确认状态和证据入口。
+- 行业域详情展示分数拆解、主要催化、风险词、命中关键词、相关事件、正/负面证据、全部证据和下一步观察点。
+- 后续行业域详情展示关联监控股票池 Top 10：股票代码、名称、关联度、选择原因、相关证据、监控指标和更新时间。
 - 在最新流、搜索结果和详情页提供收藏与加入专题入口。
 - 在独立“数据源”页提供数据源列表和新增表单，展示源介绍、发布机构、市场、质量层级和过滤摘要，并支持启用或停用来源。
 - 在最新流、搜索页和翻译批量操作中提供数据源筛选；最新流不承载数据源管理区。
@@ -422,7 +462,7 @@ HTML 公开源边界：
 - API 请求失败或浏览器离线时显示站内状态提示，避免空白页面。
 - service worker 只缓存静态 shell；`/api/` 请求不进入缓存，避免展示过期情报。
 
-### 3.10 安全远程访问入口
+### 3.11 安全远程访问入口
 
 职责：
 
@@ -443,7 +483,7 @@ HTML 公开源边界：
 - 当前普通用户推荐路径是 Windows Tailscale + Tailscale Serve：Signal Harbor 在 WSL/Linux 内监听 `0.0.0.0:8765` 并开启 Basic Auth，Windows PowerShell 使用 `tailscale serve --bg --https=443 http://127.0.0.1:8765` 提供 tailnet 内 HTTPS 地址，Android 手机连接同一 tailnet 后访问 `https://<电脑名>.<tailnet>.ts.net`。
 - Tailscale 和 Tailscale Serve 属于外部运行前置条件，不由项目代码管理；电脑重启后通常只需要重新启动 `scripts/run_dev.py`，`tailscale serve --bg` 配置会随 Tailscale 恢复，除非用户改端口、重装 Tailscale 或执行 `tailscale serve reset`。
 
-### 3.11 运行闭环
+### 3.12 运行闭环
 
 位置：`backend/signal_harbor/runtime.py`、`scripts/run_dev.py`、`frontend/static/`
 
